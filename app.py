@@ -1,87 +1,147 @@
 import streamlit as st
 import requests
 
-# --- SEADISTUS ---
-# Võtame API võtme seadetest (selgitan seda hiljem)
+# --- SEADISTUS JA API ---
 try:
     API_KEY = st.secrets["news_api_key"]
 except:
     API_KEY = '2ce3c945b7f541a99d517f2decf1528e'
 
-st.set_page_config(page_title="Nutikas Hommikubriifing", layout="wide")
+st.set_page_config(page_title="Global Insight | Nutibriifing", layout="wide")
 
-# --- STIIL (CSS) ---
+# --- CUSTOM CSS (Professionaalne ja kompaktne välimus) ---
 st.markdown("""
     <style>
+    .main { background-color: #f8f9fa; }
     .stCard {
         background-color: white;
-        padding: 20px;
-        border-radius: 12px;
-        border: 1px solid #e1e4e8;
-        margin-bottom: 20px;
-        min-height: 380px;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
+        padding: 12px;
+        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+        margin-bottom: 15px;
+        transition: transform 0.2s;
+        height: 100%;
     }
-    .source-tag {
-        background-color: #ebf5ff;
+    .stCard:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    }
+    .source-label {
         color: #007bff;
-        padding: 4px 10px;
-        border-radius: 20px;
-        font-size: 12px;
+        font-size: 11px;
         font-weight: bold;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+        display: block;
     }
-    h3 { color: #1a1a1a; margin-top: 10px; font-size: 1.2rem !important; }
+    .news-title {
+        font-size: 15px !important;
+        font-weight: 700 !important;
+        color: #1a1a1a !important;
+        line-height: 1.3 !important;
+        margin-bottom: 8px !important;
+    }
+    .news-desc {
+        font-size: 13px !important;
+        color: #555 !important;
+        line-height: 1.4 !important;
+    }
+    img {
+        border-radius: 5px;
+        margin-bottom: 10px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- MENÜÜ ---
-st.sidebar.title("🌍 Sinu briifing")
-teema = st.sidebar.selectbox("Vali valdkond:", ["Kõik", "Maailm & Poliitika", "Julgeolek & Sõda", "Teadus & Tehnoloogia", "Majandus", "Tervis"])
-allikad = st.sidebar.multiselect("Eelistatud kanalid:", ["Reuters", "BBC News", "CNN", "Bloomberg", "Deutsche Welle", "Al Jazeera"])
+# --- KÜLGPANEEL (Sidebar) ---
+st.sidebar.header("🔍 Seadista oma briifing")
 
-source_map = {"Reuters": "reuters", "BBC News": "bbc-news", "CNN": "cnn", "Bloomberg": "bloomberg", "Deutsche Welle": "google-news-sa", "Al Jazeera": "al-jazeera-english"}
+# 1. Laiendatud teemad
+teema_valik = st.sidebar.selectbox(
+    "Vali kategooria:",
+    ["Värsked maailmauudised", "Poliitika", "Julgeolek & Sõda", "Majandus & Finants", 
+     "Teadus & Tehnoloogia", "Keskkond & Kliima", "Ühiskond & Kultuur", "Tervis", "Eesti fookus"]
+)
 
-def fetch_data():
-    base = "https://newsapi.org/v2/"
-    p = {"apiKey": API_KEY, "language": "en", "pageSize": 12}
+# 2. Uudisteallikate valik (Maailma populaarseimad + usaldusväärsed)
+allika_valik = st.sidebar.multiselect(
+    "Eelistatud kanalid (valikuline):",
+    options=[
+        "Reuters", "BBC News", "Associated Press", "CNN", 
+        "Deutsche Welle", "Al Jazeera", "Bloomberg", "The Wall Street Journal", 
+        "The Guardian", "Financial Times"
+    ],
+    help="Kui valid konkreetsed kanalid, siis kategooria valik muutub teisejärguliseks."
+)
+
+# Kaardistame allikad NewsAPI ID-dega
+source_map = {
+    "Reuters": "reuters", "BBC News": "bbc-news", "Associated Press": "associated-press",
+    "CNN": "cnn", "Deutsche Welle": "google-news-sa", "Al Jazeera": "al-jazeera-english",
+    "Bloomberg": "bloomberg", "The Wall Street Journal": "the-wall-street-journal",
+    "The Guardian": "the-guardian-uk", "Financial Times": "financial-times"
+}
+
+# --- UUDISTE HANKIMISE FUNKTSIOON ---
+def fetch_news():
+    base_url = "https://newsapi.org/v2/"
+    params = {"apiKey": API_KEY, "pageSize": 21, "language": "en"}
     
-    if allikad:
-        p["sources"] = ",".join([source_map[s] for s in allikad])
-        url = base + "everything"
+    # Loogika: kui on valitud allikad
+    if allika_valik:
+        ids = [source_map[s] for s in allika_valik if s in source_map]
+        params["sources"] = ",".join(ids)
+        endpoint = "everything"
     else:
-        url = base + "top-headlines"
-        if teema == "Maailm & Poliitika": p["category"] = "general"; p["q"] = "politics"
-        elif teema == "Julgeolek & Sõda": url = base + "everything"; p["q"] = "war OR military OR security"
-        elif teema == "Teadus & Tehnoloogia": p["category"] = "technology"
-        elif teema == "Majandus": p["category"] = "business"
-        elif teema == "Tervis": p["category"] = "health"
-        else: p["country"] = "us"
-    
-    res = requests.get(url, params=p)
-    return res.json().get('articles', [])
+        # Loogika kategooriate põhjal
+        endpoint = "top-headlines"
+        if teema_valik == "Poliitika": params["q"] = "politics OR election"
+        elif teema_valik == "Julgeolek & Sõda": endpoint = "everything"; params["q"] = "war OR military OR NATO OR security"
+        elif teema_valik == "Majandus & Finants": params["category"] = "business"
+        elif teema_valik == "Teadus & Tehnoloogia": params["category"] = "technology"
+        elif teema_valik == "Keskkond & Kliima": endpoint = "everything"; params["q"] = "climate OR environment OR warming"
+        elif teema_valik == "Ühiskond & Kultuur": endpoint = "everything"; params["q"] = "society OR culture OR human rights"
+        elif teema_valik == "Tervis": params["category"] = "health"
+        elif teema_valik == "Eesti fookus": endpoint = "everything"; params["q"] = "Estonia OR Tallinn"; params.pop("language")
+        else: params["category"] = "general"
 
-# --- SISU ---
-st.title("☀️ Nutikas Hommikubriifing")
-st.write("Värskeimad uudised maailma usaldusväärsetest allikatest.")
+    try:
+        r = requests.get(f"{base_url}{endpoint}", params=params)
+        return r.json().get('articles', [])
+    except:
+        return []
 
-uudised = fetch_data()
+# --- PEALEHT ---
+st.title("☀️ Global Insight")
+st.caption(f"Sinu personaalne briifing: **{teema_valik}**")
 
-if not uudised:
-    st.info("Hetkel uudiseid ei leitud. Proovi teist kategooriat.")
+articles = fetch_news()
+
+if not articles:
+    st.info("Valitud filtritega uudiseid hetkel ei leitud. Proovi laiendada valikut.")
 else:
-    kolonnid = st.columns(2)
-    for i, art in enumerate(uudised):
-        with kolonnid[i % 2]:
+    # 3-tulbaline vaade (kompaktsem)
+    cols = st.columns(3)
+    
+    for idx, art in enumerate(articles):
+        col = cols[idx % 3] # Jagab uudised kolme tulpa
+        
+        with col:
+            # Uudise kasti loomine
             st.markdown(f"""
                 <div class="stCard">
-                    <span class="source-tag">{art['source']['name']}</span>
-                    <h3>{art['title']}</h3>
-                    <p>{art['description'][:180] if art['description'] else 'Sisu kokkuvõte puudub.'}...</p>
-                    <a href="{art['url']}" target="_blank">Loe täispikka artiklit →</a>
+                    <span class="source-label">{art['source']['name']}</span>
+                    <div class="news-title">{art['title'][:85]}...</div>
+                    <p class="news-desc">{art['description'][:120] if art['description'] else 'Sisu kokkuvõte puudub.'}...</p>
+                    <a href="{art['url']}" target="_blank" style="font-size: 12px; color: #007bff; text-decoration: none; font-weight: bold;">Loe edasi →</a>
                 </div>
             """, unsafe_allow_html=True)
+            
+            # Pildi lisamine (kui on olemas)
             if art.get('urlToImage'):
                 st.image(art['urlToImage'], use_container_width=True)
+            st.write("") # Väike vahe
 
+# --- JALUS ---
 st.divider()
-st.caption("Allikas: NewsAPI | Loodud tehisintellekti kursuse raames.")
+st.markdown("<p style='text-align: center; color: gray; font-size: 12px;'>Andmeallikas: NewsAPI.org | Filtreeritud erapooletuse ja usaldusväärsuse põhimõttel.</p>", unsafe_allow_html=True)
